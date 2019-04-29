@@ -52,6 +52,7 @@ Currently, the code supports python 3
 * scikit-image
 * tensorboardX
 * colorama, tqdm, setproctitle 
+* [torchsummary](https://github.com/sksq96/pytorch-summary)
 
 ## Converted Caffe Pre-trained Models
 We've included caffe pre-trained models. Should you use these pre-trained weights, please adhere to the [license agreements](https://drive.google.com/file/d/1TVv0BnNFh3rpHZvD-easMb9jYrPE2Eqd/view?usp=sharing). 
@@ -65,6 +66,8 @@ We've included caffe pre-trained models. Should you use these pre-trained weight
 * [FlowNet2-SD](https://drive.google.com/file/d/1QW03eyYG_vD-dT-Mx4wopYvtPu_msTKn/view?usp=sharing)[173MB]
     
 ## Inference
+For test set, use ImagesFromFolder dataset
+
     # Example on MPISintel Clean   
     python main.py --inference --model FlowNet2 --save_flow --inference_dataset MpiSintelClean \
     --inference_dataset_root /path/to/mpi-sintel/clean/dataset \
