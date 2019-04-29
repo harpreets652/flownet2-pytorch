@@ -294,8 +294,8 @@ if __name__ == '__main__':
             losses = model(data[0], target[0])
             losses = [torch.mean(loss_value) for loss_value in losses]
             loss_val = losses[0]  # Collect first loss for weight update
-            total_loss += loss_val.data[0]
-            loss_values = [v.data[0] for v in losses]
+            total_loss += loss_val.data
+            loss_values = [v.data for v in losses]
 
             # gather loss_labels, direct return leads to recursion limit error as it looks for variables to gather'
             loss_labels = list(model.module.loss.loss_labels)
@@ -355,10 +355,10 @@ if __name__ == '__main__':
             # Reset Summary
             statistics = []
 
-            if (is_validate and (batch_idx == args.validation_n_batches)):
+            if is_validate and (batch_idx == args.validation_n_batches):
                 break
 
-            if ((not is_validate) and (batch_idx == (args.train_n_batches))):
+            if (not is_validate) and (batch_idx == (args.train_n_batches)):
                 break
 
         progress.close()
