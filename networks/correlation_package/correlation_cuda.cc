@@ -1,3 +1,4 @@
+#include <ATen/cuda/CUDAContext.h>
 #include <torch/torch.h>
 #include <ATen/ATen.h>
 #include <stdio.h>
@@ -71,7 +72,7 @@ int correlation_forward_cuda(at::Tensor& input1, at::Tensor& input2, at::Tensor&
     stride1,
     stride2,
     corr_type_multiply,
-    at::globalContext().getCurrentCUDAStream()
+    at::cuda::getCurrentCUDAStream()
   );
 
   //check for errors
@@ -152,7 +153,7 @@ int correlation_backward_cuda(at::Tensor& input1, at::Tensor& input2, at::Tensor
                                                 stride1, 
                                                 stride2,
                                                 corr_type_multiply,
-                                                at::globalContext().getCurrentCUDAStream()
+                                                at::cuda::getCurrentCUDAStream()
                                                );
 
   if (!success) {
