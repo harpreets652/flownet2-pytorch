@@ -404,8 +404,8 @@ if __name__ == '__main__':
             if args.save_flow or args.render_validation:
                 for i in range(args.inference_batch_size):
                     _pflow = output[i].data.cpu().numpy().transpose(1, 2, 0)
-                    flow_utils.writeFlow(join(flow_folder, '%06d.flo' % (batch_idx * args.inference_batch_size + i)),
-                                         _pflow)
+                    flow_utils.write_flow(join(flow_folder, '%06d.flo' % (batch_idx * args.inference_batch_size + i)),
+                                          _pflow)
 
             progress.set_description(
                 'Inference Averages for Epoch {}: '.format(epoch) + tools.format_dictionary_of_losses(loss_labels,

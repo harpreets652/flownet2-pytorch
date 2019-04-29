@@ -14,5 +14,5 @@ def read_gen(file_name):
     elif ext == '.bin' or ext == '.raw':
         return np.load(file_name)
     elif ext == '.flo':
-        return flow_utils.readFlow(file_name).astype(np.float32)
+        return flow_utils.read_flow(file_name).astype(np.float32)
     return []
