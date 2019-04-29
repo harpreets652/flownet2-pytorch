@@ -1,6 +1,8 @@
 import numpy as np
+import cv2
 
 TAG_CHAR = np.array([202021.25], np.float32)
+
 
 def readFlow(fn):
     """ Read .flo file in Middlebury format"""
@@ -18,12 +20,13 @@ def readFlow(fn):
             w = np.fromfile(f, np.int32, count=1)
             h = np.fromfile(f, np.int32, count=1)
             # print 'Reading %d x %d flo file\n' % (w, h)
-            data = np.fromfile(f, np.float32, count=2*int(w)*int(h))
+            data = np.fromfile(f, np.float32, count=2 * int(w) * int(h))
             # Reshape data into 3D array (columns, rows, bands)
             # The reshape here is for visualization, the original code is (w,h,2)
             return np.resize(data, (int(h), int(w), 2))
 
-def writeFlow(filename,uv,v=None):
+
+def writeFlow(filename, uv, v=None):
     """ Write optical flow to file.
     
     If v is None, uv is assumed to contain both u and v channels,
@@ -33,23 +36,56 @@ def writeFlow(filename,uv,v=None):
     nBands = 2
 
     if v is None:
-        assert(uv.ndim == 3)
-        assert(uv.shape[2] == 2)
-        u = uv[:,:,0]
-        v = uv[:,:,1]
+        assert (uv.ndim == 3)
+        assert (uv.shape[2] == 2)
+        u = uv[:, :, 0]
+        v = uv[:, :, 1]
     else:
         u = uv
 
-    assert(u.shape == v.shape)
-    height,width = u.shape
-    f = open(filename,'wb')
+    assert (u.shape == v.shape)
+    height, width = u.shape
+    f = open(filename, 'wb')
     # write the header
     f.write(TAG_CHAR)
     np.array(width).astype(np.int32).tofile(f)
     np.array(height).astype(np.int32).tofile(f)
     # arrange into matrix form
-    tmp = np.zeros((height, width*nBands))
-    tmp[:,np.arange(width)*2] = u
-    tmp[:,np.arange(width)*2 + 1] = v
+    tmp = np.zeros((height, width * nBands))
+    tmp[:, np.arange(width) * 2] = u
+    tmp[:, np.arange(width) * 2 + 1] = v
     tmp.astype(np.float32).tofile(f)
     f.close()
+
+
+def flow_to_image_hsv(flow):
+    mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
+
+    hsv = np.zeros((flow.shape[0], flow.shape[1], 3), dtype=np.uint8)
+    hsv[..., 1] = 255
+
+    hsv[..., 0] = ang * 180 / np.pi / 2
+    hsv[..., 2] = cv2.normalize(mag, None, 0, 255, cv2.NORM_MINMAX)
+    bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+
+    return bgr
+
+
+def compute_optical_flow_farneback(frame_a, frame_b, include_magnitude=True):
+    """
+    Computes optical flow between two frames, assuming images are grayscale
+
+    :param frame_a: frame N
+    :param frame_b: frame N+1
+    :param include_magnitude: append magnitude to optical flow array
+    :return: optical flow + magnitude
+    """
+
+    flow = cv2.calcOpticalFlowFarneback(frame_a, frame_b, None, 0.5, 2, 13, 3, 5, 1.1, 0)
+
+    if include_magnitude:
+        mag, _ = cv2.cartToPolar(flow[:, :, 0], flow[:, :, 1])
+        mag = np.expand_dims(mag, -1)
+        flow = np.dstack((flow, mag))
+
+    return flow
