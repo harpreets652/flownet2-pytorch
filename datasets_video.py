@@ -79,7 +79,7 @@ class VideoFileSet(data.Dataset):
             normalized_a = normalize_scale(frame_a)
             normalized_b = normalize_scale(frame_b)
 
-            # stack frames a, b
+            # stack frames a, b; input: [channels, num_stacked_frames, rows, cols]
             stacked_frames = np.array([normalized_a, normalized_b]).transpose(3, 0, 1, 2)
             image_frames.append(stacked_frames)
 

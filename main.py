@@ -5,6 +5,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
 from tensorboardX import SummaryWriter
+# from torchsummary import summary
 
 import argparse, os, sys, subprocess
 import setproctitle, colorama
@@ -195,6 +196,8 @@ if __name__ == '__main__':
 
 
         model_and_loss = ModelAndLoss(args)
+        # debug code: to determine model summary
+        # summary(model_and_loss.model, (3, 2, 384, 512), batch_size=1, device="cpu")
 
         block.log('Effective Batch Size: {}'.format(args.effective_batch_size))
         block.log('Number of parameters: {}'.format(
