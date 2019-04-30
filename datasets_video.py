@@ -8,7 +8,7 @@ import cv2
 import utils.flow_utils as fu
 
 
-class VideoDataSet(data.Dataset):
+class VideoFiles(data.Dataset):
     def __init__(self, args, root='', file_pattern="*.mov"):
         self.video_files_list = glob.glob(os.path.join(root, file_pattern), recursive=False)
 
@@ -23,11 +23,14 @@ class VideoDataSet(data.Dataset):
         return self.size
 
 
-class VideoFileSet(data.Dataset):
+class VideoFileData(data.Dataset):
     def __init__(self, args, file_path):
-        video_frames = read_video_frames(file_path)
+        if args.crop_size[0] < 0 or args.crop_size[1] < 0:
+            args.crop_size = (512, 384)
 
-        self.images, self.flows = VideoFileSet._generate_flow_frames_stride(video_frames, args.stride, "none")
+        video_frames = read_video_frames(file_path, args.crop_size)
+
+        self.images, self.flows = VideoFileData._generate_flow_frames_stride(video_frames, args.stride, "none")
 
         self.size = self.images.shape[0]
         return
@@ -112,7 +115,7 @@ class VideoFileSet(data.Dataset):
         return np.array(image_frames), np.array(optical_flow_frames)
 
 
-def read_video_frames(video_file):
+def read_video_frames(video_file, image_size=(512, 384)):
     input_video = cv2.VideoCapture(video_file)
 
     if not input_video.isOpened():
@@ -125,7 +128,7 @@ def read_video_frames(video_file):
     if not frame_exists:
         raise RuntimeError(f"No frames in video: {video_file}")
 
-    frame_a = pre_process(frame_a)
+    frame_a = pre_process(frame_a, image_size)
     video_frames.append(frame_a)
     frame_counter = 1
 
@@ -135,7 +138,7 @@ def read_video_frames(video_file):
         if not frame_exists:
             break
 
-        frame_a = pre_process(frame_a)
+        frame_a = pre_process(frame_a, image_size)
         video_frames.append(frame_a)
         frame_counter += 1
 
@@ -147,17 +150,18 @@ def read_video_frames(video_file):
     return np.array(video_frames)
 
 
-def pre_process(frame):
+def pre_process(frame, image_size):
     """
     pre-process frame
 
+    :param image_size: tuple, image size
     :param frame: input frame
     :return: processed frame
     """
 
     # image shape is [height, width, channel] but resize expects (width, height)
     frame = frame[:576, :, :]
-    frame = cv2.resize(frame, (512, 384), interpolation=cv2.INTER_LINEAR)
+    frame = cv2.resize(frame, image_size, interpolation=cv2.INTER_LINEAR)
     # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
     return frame
