@@ -34,7 +34,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', '-b', type=int, default=8, help="Batch size")
     parser.add_argument('--train_n_batches', type=int, default=-1,
                         help='Number of min-batches per epoch. If < 0, it will be determined by training_dataloader')
-    parser.add_argument('--crop_size', type=int, nargs='+', default=[256, 256],
+    parser.add_argument('--crop_size', type=int, nargs='+', default=(512, 256),
                         help="Spatial dimension to crop training samples for training")
     parser.add_argument('--gradient_clip', type=float, default=None)
     parser.add_argument('--schedule_lr_frequency', type=int, default=0,
@@ -117,9 +117,9 @@ if __name__ == '__main__':
         args.optimizer_class = tools.module_to_dict(torch.optim)[args.optimizer]
         args.loss_class = tools.module_to_dict(losses)[args.loss]
 
-        args.training_dataset_class = tools.module_to_dict(datasets)[args.training_dataset]
-        args.validation_dataset_class = tools.module_to_dict(datasets)[args.validation_dataset]
-        args.inference_dataset_class = tools.module_to_dict(datasets)[args.inference_dataset]
+        args.training_dataset_class = tools.module_to_dict(datasets_video)[args.training_dataset]
+        args.validation_dataset_class = tools.module_to_dict(datasets_video)[args.validation_dataset]
+        args.inference_dataset_class = tools.module_to_dict(datasets_video)[args.inference_dataset]
 
         args.cuda = not args.no_cuda and torch.cuda.is_available()
         args.current_hash = subprocess.check_output(["git", "rev-parse", "HEAD"]).rstrip()
@@ -283,7 +283,7 @@ if __name__ == '__main__':
 
         last_log_time = file_progress._time()
         for batch_idx, (data_file) in enumerate(file_progress):
-            video_dataset = datasets_video.VideoFileData(input_args, data_file)
+            video_dataset = datasets_video.VideoFileData(input_args, data_file[0])
             video_loader = DataLoader(video_dataset, batch_size=args.effective_batch_size, shuffle=True, **gpuargs)
 
             global_iteration = start_iteration + batch_idx

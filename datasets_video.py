@@ -30,7 +30,7 @@ class VideoFileData(data.Dataset):
 
         video_frames = read_video_frames(file_path, args.crop_size)
 
-        self.images, self.flows = VideoFileData._generate_flow_frames_stride(video_frames, args.stride, "none")
+        self.images, self.flows = VideoFileData._generate_flow_frames_stride(video_frames, 1, "none")
 
         self.size = self.images.shape[0]
         return
