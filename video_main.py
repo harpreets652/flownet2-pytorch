@@ -15,7 +15,6 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-import datasets
 import datasets_video
 import losses
 import models
@@ -34,7 +33,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', '-b', type=int, default=8, help="Batch size")
     parser.add_argument('--train_n_batches', type=int, default=-1,
                         help='Number of min-batches per epoch. If < 0, it will be determined by training_dataloader')
-    parser.add_argument('--crop_size', type=int, nargs='+', default=(512, 256),
+    parser.add_argument('--crop_size', type=int, nargs='+', default=(512, 384),
                         help="Spatial dimension to crop training samples for training")
     parser.add_argument('--gradient_clip', type=float, default=None)
     parser.add_argument('--schedule_lr_frequency', type=int, default=0,
@@ -85,7 +84,9 @@ if __name__ == '__main__':
                                    skip_params=['is_cropped'],
                                    parameter_defaults={'root': './anomaly-highway/train'})
 
-    tools.add_arguments_for_module(parser, datasets_video, argument_for_class='validation_dataset', default='VideoFiles',
+    tools.add_arguments_for_module(parser, datasets_video,
+                                   argument_for_class='validation_dataset',
+                                   default='VideoFiles',
                                    skip_params=['is_cropped'],
                                    parameter_defaults={'root': './MPI-Sintel/flow/training',
                                                        'replicates': 1})
@@ -101,7 +102,8 @@ if __name__ == '__main__':
     # Parse the official arguments
     with tools.TimerBlock("Parsing Arguments") as block:
         args = parser.parse_args()
-        if args.number_gpus < 0: args.number_gpus = torch.cuda.device_count()
+        if args.number_gpus < 0:
+            args.number_gpus = torch.cuda.device_count()
 
         # Get argument defaults (hastag #thisisahack)
         parser.add_argument('--IGNORE', action='store_true')
@@ -154,6 +156,7 @@ if __name__ == '__main__':
         if exists(args.training_dataset_root):
             train_dataset = args.training_dataset_class(args, **tools.kwargs_from_args(args, 'training_dataset'))
             block.log('Training Dataset: {}'.format(args.training_dataset))
+            block.log('Training Dataset Size: {}'.format(len(train_dataset)))
 
             # note~ batch size is set to one video at a time
             train_loader = DataLoader(train_dataset, batch_size=1)
@@ -262,7 +265,8 @@ if __name__ == '__main__':
         block.log2file(args.log_file, '{}: {}'.format(argument, value))
 
     # Reusable function for training and validataion
-    def train(input_args, train_epoch, start_iteration, files_loader, model, model_optimizer, logger, is_validate=False, offset=0):
+    def train(input_args, train_epoch, start_iteration, files_loader, model, model_optimizer, logger, is_validate=False,
+              offset=0):
         statistics = []
         total_loss = 0
 
@@ -271,22 +275,30 @@ if __name__ == '__main__':
             title = 'Validating Epoch {}'.format(train_epoch)
             input_args.validation_n_batches = np.inf if input_args.validation_n_batches < 0 else input_args.validation_n_batches
             file_progress = tqdm(tools.IteratorTimer(files_loader), ncols=100,
-                            total=np.minimum(len(files_loader), input_args.validation_n_batches), leave=True, position=offset,
-                            desc=title)
+                                 total=np.minimum(len(files_loader), input_args.validation_n_batches), leave=True,
+                                 position=offset,
+                                 desc=title)
         else:
             model.train()
             title = 'Training Epoch {}'.format(train_epoch)
             input_args.train_n_batches = np.inf if input_args.train_n_batches < 0 else input_args.train_n_batches
             file_progress = tqdm(tools.IteratorTimer(files_loader), ncols=120,
-                            total=np.minimum(len(files_loader), input_args.train_n_batches), smoothing=.9, miniters=1,
-                            leave=True, position=offset, desc=title)
+                                 total=np.minimum(len(files_loader), input_args.train_n_batches), smoothing=.9,
+                                 miniters=1,
+                                 leave=True, position=offset, desc=title)
 
         last_log_time = file_progress._time()
         for batch_idx, (data_file) in enumerate(file_progress):
-            video_dataset = datasets_video.VideoFileData(input_args, data_file[0])
+            video_dataset = datasets_video.VideoFileDataJIT(input_args, data_file[0])
             video_loader = DataLoader(video_dataset, batch_size=args.effective_batch_size, shuffle=True, **gpuargs)
 
             global_iteration = start_iteration + batch_idx
+
+            # note~ for debugging purposes
+            # video_frame_progress = tqdm(tools.IteratorTimer(video_loader), ncols=120,
+            #                            total=len(video_loader), smoothing=0.9, miniters=1,
+            #                            leave=True, desc=data_file[0])
+
             for i_batch, (data, target) in enumerate(video_loader):
                 data, target = [Variable(d) for d in data], [Variable(t) for t in target]
                 if input_args.cuda and input_args.number_gpus == 1:
@@ -302,7 +314,7 @@ if __name__ == '__main__':
                 # gather loss_labels, direct return leads to recursion limit error as it looks for variables to gather'
                 loss_labels = list(model.module.loss.loss_labels)
 
-                assert not np.isnan(total_loss)
+                assert not np.isnan(total_loss.cpu().numpy())
 
                 if not is_validate and input_args.fp16:
                     loss_val.backward()
@@ -335,7 +347,9 @@ if __name__ == '__main__':
             statistics.append(loss_values)
             title = '{} Epoch {}'.format('Validating' if is_validate else 'Training', train_epoch)
 
-            file_progress.set_description(title + ' ' + tools.format_dictionary_of_losses(loss_labels, statistics[-1]))
+            file_progress.set_description(title + ' ' +
+                                          tools.format_dictionary_of_losses(tools.flatten_list(loss_labels),
+                                                                            statistics[-1]))
 
             if ((((global_iteration + 1) % input_args.log_frequency) == 0 and not is_validate) or
                     (is_validate and batch_idx == input_args.validation_n_batches - 1)):
@@ -348,8 +362,13 @@ if __name__ == '__main__':
 
                 all_losses = np.array(statistics)
 
-                for i, key in enumerate(loss_labels):
-                    logger.add_scalar('average batch ' + str(key), all_losses[:, i].mean(), global_iteration)
+                for i, key in enumerate(tools.flatten_list(loss_labels)):
+                    if isinstance(all_losses[:, i].item(), torch.Tensor):
+                        average_batch = all_losses[:, i].item().mean()
+                    else:
+                        average_batch = all_losses[:, i].item()
+
+                    logger.add_scalar('average batch ' + str(key), average_batch, global_iteration)
                     logger.add_histogram(str(key), all_losses[:, i], global_iteration)
 
             # Reset Summary
@@ -367,6 +386,7 @@ if __name__ == '__main__':
 
 
     # Reusable function for inference
+    # todo: modify to handle videos
     def inference(args, epoch, data_loader, model, offset=0):
 
         model.eval()

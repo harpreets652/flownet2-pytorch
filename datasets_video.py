@@ -8,7 +8,7 @@ import cv2
 import utils.flow_utils as fu
 
 # this should be a parameter
-SAMPLING_STRIDE = 1
+SAMPLING_STRIDE = 2
 
 
 class VideoFiles(data.Dataset):
@@ -110,7 +110,7 @@ def generate_flow_frames(image_a, image_b, flow_norm_style):
         input_frame = input_frame.astype("float32")
 
         # [0, 1]
-        input_frame /= 255.0
+        # input_frame /= 255.0
 
         # [0, 1] => [-1, 1]
         # input_frame = input_frame * 2 - 1
