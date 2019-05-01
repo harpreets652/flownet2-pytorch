@@ -117,3 +117,7 @@ Paper : [PWC-Net: CNNs for Optical Flow Using Pyramid, Warping, and Cost Volume]
 
 ## Acknowledgments
 Parts of this code were derived, as noted in the code, from [ClementPinard/FlowNetPytorch](https://github.com/ClementPinard/FlowNetPytorch).
+
+## My notes
+* use MultiScale loss for training: https://github.com/NVIDIA/flownet2-pytorch/issues/61
+* It doesn't look like images and optical flow is scaled
