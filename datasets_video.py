@@ -7,6 +7,9 @@ import cv2
 
 import utils.flow_utils as fu
 
+# this should be a parameter
+SAMPLING_STRIDE = 1
+
 
 class VideoFiles(data.Dataset):
     def __init__(self, args, root='', file_pattern="*.mov"):
@@ -23,6 +26,30 @@ class VideoFiles(data.Dataset):
         return self.size
 
 
+class VideoFileDataJIT(data.Dataset):
+    def __init__(self, args, file_path):
+        if args.crop_size[0] < 0 or args.crop_size[1] < 0:
+            args.crop_size = (512, 384)
+
+        self.video_frames = read_video_frames(file_path, args.crop_size)
+        self.size = self.video_frames.shape[0] - SAMPLING_STRIDE
+        return
+
+    def __getitem__(self, index):
+        image_a = self.video_frames[index]
+        image_b = self.video_frames[index + SAMPLING_STRIDE]
+
+        input_images, flow = generate_flow_frames(image_a, image_b, "none")
+
+        images_tensor = torch.from_numpy(input_images)
+        flow_tensor = torch.from_numpy(flow)
+
+        return [images_tensor], [flow_tensor]
+
+    def __len__(self):
+        return self.size
+
+
 class VideoFileData(data.Dataset):
     def __init__(self, args, file_path):
         if args.crop_size[0] < 0 or args.crop_size[1] < 0:
@@ -30,7 +57,7 @@ class VideoFileData(data.Dataset):
 
         video_frames = read_video_frames(file_path, args.crop_size)
 
-        self.images, self.flows = VideoFileData._generate_flow_frames_stride(video_frames, 1, "none")
+        self.images, self.flows = _generate_flow_frames_stride(video_frames, SAMPLING_STRIDE, "none")
 
         self.size = self.images.shape[0]
         return
@@ -47,72 +74,78 @@ class VideoFileData(data.Dataset):
     def __len__(self):
         return self.size
 
-    @staticmethod
-    def _generate_flow_frames_stride(video_frames, stride, flow_norm_style):
-        """
-        Generate image-flow pairs for CGAN without masking
-        note~ assuming bgr colored frames
 
-        :param video_frames: input video frames
-        :param stride: sampling stride
-        :param flow_norm_style: "clip|mag|viz|none"
-        :return:
-        """
+def _generate_flow_frames_stride(video_frames, stride, flow_norm_style):
+    """
+    Generate image-flow pairs for CGAN without masking
 
-        optical_flow_frames = []
-        image_frames = []
-        flow_norm_clip = 25.0
+    :param video_frames: input video frames
+    :param stride: sampling stride
+    :param flow_norm_style: "clip|mag|viz|none"
+    :return:
+    """
 
-        def normalize_scale(input_frame):
-            input_frame = input_frame.astype("float32")
+    optical_flow_frames = []
+    image_frames = []
 
-            # [0, 1]
-            input_frame /= 255.0
+    i = 0
+    while i + stride < video_frames.shape[0]:
+        frame_a = video_frames[i, :, :]
+        frame_b = video_frames[i + stride, :, :]
 
-            # [0, 1] => [-1, 1]
-            # input_frame = input_frame * 2 - 1
+        stacked_frames, flow = generate_flow_frames(frame_a, frame_b, flow_norm_style)
 
-            return input_frame
+        image_frames.append(stacked_frames)
+        optical_flow_frames.append(flow)
 
-        i = 0
-        while i + stride < video_frames.shape[0]:
-            frame_a = video_frames[i, :, :]
-            frame_b = video_frames[i + stride, :, :]
+        i += stride
 
-            normalized_a = normalize_scale(frame_a)
-            normalized_b = normalize_scale(frame_b)
+    return np.array(image_frames), np.array(optical_flow_frames)
 
-            # stack frames a, b; input: [channels, num_stacked_frames, rows, cols]
-            stacked_frames = np.array([normalized_a, normalized_b]).transpose(3, 0, 1, 2)
-            image_frames.append(stacked_frames)
 
-            # normalize flow
-            frame_a_gray = cv2.cvtColor(frame_a, cv2.COLOR_BGR2GRAY)
-            frame_b_gray = cv2.cvtColor(frame_b, cv2.COLOR_BGR2GRAY)
+def generate_flow_frames(image_a, image_b, flow_norm_style):
+    flow_norm_clip = 25.0
 
-            if flow_norm_style == "clip":
-                flow = fu.compute_optical_flow_farneback(frame_a_gray, frame_b_gray, False)
-                flow.clip(-flow_norm_clip, flow_norm_clip)
-                flow /= flow_norm_clip
-            elif flow_norm_style == "viz":
-                flow = fu.compute_optical_flow_farneback(frame_a_gray, frame_b_gray, False)
-                flow_viz = fu.flow_to_image_hsv(flow)
-                flow = normalize_scale(flow_viz)
-            elif flow_norm_style == "mag":
-                flow_mag = fu.compute_optical_flow_farneback(frame_a_gray, frame_b_gray, True)
-                flow = flow_mag[:, :, :2]
-                mag = flow_mag[:, :, 2]
-                flow[:, :, 0] = np.divide(flow[:, :, 0], mag, out=np.zeros_like(flow[:, :, 0]), where=mag != 0)
-                flow[:, :, 1] = np.divide(flow[:, :, 1], mag, out=np.zeros_like(flow[:, :, 1]), where=mag != 0)
-            else:
-                flow = fu.compute_optical_flow_farneback(frame_a_gray, frame_b_gray, False)
+    def normalize_scale(input_frame):
+        input_frame = input_frame.astype("float32")
 
-            flow = flow.transpose(2, 0, 1)
-            optical_flow_frames.append(flow)
+        # [0, 1]
+        input_frame /= 255.0
 
-            i += stride
+        # [0, 1] => [-1, 1]
+        # input_frame = input_frame * 2 - 1
 
-        return np.array(image_frames), np.array(optical_flow_frames)
+        return input_frame
+
+    normalized_a = normalize_scale(image_a)
+    normalized_b = normalize_scale(image_b)
+
+    # stack frames a, b; input: [channels, num_stacked_frames, rows, cols]
+    stacked_frames = np.array([normalized_a, normalized_b]).transpose(3, 0, 1, 2)
+
+    frame_a_gray = cv2.cvtColor(image_a, cv2.COLOR_BGR2GRAY)
+    frame_b_gray = cv2.cvtColor(image_b, cv2.COLOR_BGR2GRAY)
+
+    if flow_norm_style == "clip":
+        flow = fu.compute_optical_flow_farneback(frame_a_gray, frame_b_gray, False)
+        flow.clip(-flow_norm_clip, flow_norm_clip)
+        flow /= flow_norm_clip
+    elif flow_norm_style == "viz":
+        flow = fu.compute_optical_flow_farneback(frame_a_gray, frame_b_gray, False)
+        flow_viz = fu.flow_to_image_hsv(flow)
+        flow = normalize_scale(flow_viz)
+    elif flow_norm_style == "mag":
+        flow_mag = fu.compute_optical_flow_farneback(frame_a_gray, frame_b_gray, True)
+        flow = flow_mag[:, :, :2]
+        mag = flow_mag[:, :, 2]
+        flow[:, :, 0] = np.divide(flow[:, :, 0], mag, out=np.zeros_like(flow[:, :, 0]), where=mag != 0)
+        flow[:, :, 1] = np.divide(flow[:, :, 1], mag, out=np.zeros_like(flow[:, :, 1]), where=mag != 0)
+    else:
+        flow = fu.compute_optical_flow_farneback(frame_a_gray, frame_b_gray, False)
+
+    flow = flow.transpose(2, 0, 1)
+
+    return stacked_frames, flow
 
 
 def read_video_frames(video_file, image_size=(512, 384)):
