@@ -11,7 +11,6 @@ import argparse, os, sys, subprocess
 import setproctitle, colorama
 import numpy as np
 from tqdm import tqdm
-from glob import glob
 from os.path import *
 
 import models, losses, datasets
@@ -300,7 +299,7 @@ if __name__ == '__main__':
             # gather loss_labels, direct return leads to recursion limit error as it looks for variables to gather'
             loss_labels = list(model.module.loss.loss_labels)
 
-            assert not np.isnan(total_loss)
+            assert not np.isnan(total_loss.cpu().numpy())
 
             if not is_validate and args.fp16:
                 loss_val.backward()
@@ -335,7 +334,8 @@ if __name__ == '__main__':
             statistics.append(loss_values)
             title = '{} Epoch {}'.format('Validating' if is_validate else 'Training', epoch)
 
-            progress.set_description(title + ' ' + tools.format_dictionary_of_losses(loss_labels, statistics[-1]))
+            progress.set_description(title + ' ' + tools.format_dictionary_of_losses(tools.flatten_list(loss_labels),
+                                                                                     statistics[-1]))
 
             if ((((global_iteration + 1) % args.log_frequency) == 0 and not is_validate) or
                     (is_validate and batch_idx == args.validation_n_batches - 1)):
@@ -348,8 +348,13 @@ if __name__ == '__main__':
 
                 all_losses = np.array(statistics)
 
-                for i, key in enumerate(loss_labels):
-                    logger.add_scalar('average batch ' + str(key), all_losses[:, i].mean(), global_iteration)
+                for i, key in enumerate(tools.flatten_list(loss_labels)):
+                    if isinstance(all_losses[:, i].item(), torch.Tensor):
+                        average_batch = all_losses[:, i].item().mean()
+                    else:
+                        average_batch = all_losses[:, i].item()
+
+                    logger.add_scalar('average batch ' + str(key), average_batch, global_iteration)
                     logger.add_histogram(str(key), all_losses[:, i], global_iteration)
 
             # Reset Summary

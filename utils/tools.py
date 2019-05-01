@@ -79,8 +79,8 @@ def add_arguments_for_module(parser, module, argument_for_class, default, skip_p
                 argument_group.add_argument('--{}'.format(cmd_arg), type=type(defaults[i]), default=defaults[i])
             else:
                 print((
-                          "[Warning]: non-default argument '{}' detected on class '{}'. This argument cannot be modified via the command line"
-                          .format(arg, module.__class__.__name__)))
+                    "[Warning]: non-default argument '{}' detected on class '{}'. This argument cannot be modified via the command line"
+                        .format(arg, module.__class__.__name__)))
             # We don't have a good way of dealing with inferring the type of the argument
             # TODO: try creating a custom action and using ast's infer type?
             # else:
@@ -103,6 +103,19 @@ def format_dictionary_of_losses(labels, values):
         string = '[Log Error] ' + str(e)
 
     return string
+
+
+def flatten_list(input_list, flattened_list=None):
+    if flattened_list is None:
+        flattened_list = []
+
+    for i in input_list:
+        if type(i) == list:
+            flatten_list(i, flattened_list)
+        else:
+            flattened_list.append(i)
+
+    return flattened_list
 
 
 class IteratorTimer():
