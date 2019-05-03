@@ -18,7 +18,7 @@ from tqdm import tqdm
 import datasets_video
 import losses
 import models
-from utils import flow_utils, tools
+from utils import flow_utils, tools, plot_dynamic_update as dyn_plot
 
 # from torchsummary import summary
 
@@ -413,6 +413,9 @@ if __name__ == '__main__':
             video_dataset = datasets_video.VideoFileDataJIT(input_args, data_file[0])
             video_loader = DataLoader(video_dataset, batch_size=args.effective_batch_size, shuffle=True, **gpuargs)
 
+            error_plot = dyn_plot.DynamicUpdate(title="EPE", x_label="Input Index", y_label="Loss")
+            frame_losses, frame_index = [], []
+
             for i_batch, (data, target) in enumerate(video_loader):
                 if input_args.cuda:
                     data, target = [d.cuda(async=True) for d in data], [t.cuda(async=True) for t in target]
@@ -434,6 +437,12 @@ if __name__ == '__main__':
 
                 statistics.append(loss_values)
                 # import IPython; IPython.embed()
+
+                # note~ assuming batch size of 1...pytorch doesn't return a loss for each example in batch
+                frame_index.append(i_batch)
+                frame_losses.append(loss_values[1].item())
+                error_plot.on_running(frame_index, frame_losses)
+
                 if input_args.save_flow or input_args.render_validation:
                     for i in range(input_args.inference_batch_size):
                         _inference_flow = output[i].data.cpu().numpy().transpose(1, 2, 0)
@@ -443,12 +452,11 @@ if __name__ == '__main__':
                             flow_utils.write_flow(out_path, _inference_flow)
 
                         if input_args.render_validation:
-                            flow_utils.display_flow(_inference_flow)
+                            # todo: render target flow and image frames
+                            target_flow = target[0].cpu().numpy()[i].transpose(1, 2, 0)
+                            input_frames = data[0].cpu().numpy()[i].transpose(1, 2, 3, 0).astype(np.uint8)
+                            flow_utils.display_results(target_flow, input_frames, _inference_flow)
 
-                # todo: implement dynamic loss graph and comment out this stuff
-                progress.set_description('Inference Averages for Epoch {}: '.format(inf_epoch) +
-                                         tools.format_dictionary_of_losses(tools.flatten_list(loss_labels),
-                                                                           np.array(statistics).mean(axis=0)))
                 progress.update(1)
 
             if batch_idx == (input_args.inference_n_batches - 1):

@@ -115,6 +115,21 @@ def display_flow(flow):
     return
 
 
+def display_results(input_flow, input_images, output_flow):
+    image_a = input_images[0]
+    image_b = input_images[1]
+
+    rgb_frames = np.hstack((image_a, image_b))
+
+    input_flow_image = flow_2_rgb(input_flow)
+    output_flow_image = flow_2_rgb(output_flow)
+    flow_viz_frames = np.hstack((input_flow_image, output_flow_image))
+
+    cv2.imshow("image a, image b, target flow, output flow", np.vstack((rgb_frames, flow_viz_frames)))
+    cv2.waitKey(0)
+    return
+
+
 def flow_2_rgb(flow, color_wheel=None, unknown_thr=1e6):
     """Convert flow map to RGB image
 
