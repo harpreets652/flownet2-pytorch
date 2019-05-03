@@ -80,7 +80,9 @@ if __name__ == '__main__':
                                    skip_params=['params'])
 
     # note~ when multiple video data sets, update this
-    tools.add_arguments_for_module(parser, datasets_video, argument_for_class='training_dataset', default='VideoFiles',
+    tools.add_arguments_for_module(parser, datasets_video,
+                                   argument_for_class='training_dataset',
+                                   default='VideoFiles',
                                    skip_params=['is_cropped'],
                                    parameter_defaults={'root': './anomaly-highway/train'})
 
@@ -88,12 +90,14 @@ if __name__ == '__main__':
                                    argument_for_class='validation_dataset',
                                    default='VideoFiles',
                                    skip_params=['is_cropped'],
-                                   parameter_defaults={'root': './MPI-Sintel/flow/training',
+                                   parameter_defaults={'root': './anomaly-highway/train',
                                                        'replicates': 1})
 
-    tools.add_arguments_for_module(parser, datasets_video, argument_for_class='inference_dataset', default='VideoFiles',
+    tools.add_arguments_for_module(parser, datasets_video,
+                                   argument_for_class='inference_dataset',
+                                   default='VideoFiles',
                                    skip_params=['is_cropped'],
-                                   parameter_defaults={'root': './MPI-Sintel/flow/training',
+                                   parameter_defaults={'root': './anomaly-highway/train',
                                                        'replicates': 1})
 
     main_dir = os.path.dirname(os.path.realpath(__file__))
@@ -171,13 +175,15 @@ if __name__ == '__main__':
                 ' '.join([str([d for d in x.size()]) for x in validation_dataset[0][1]])))
             validation_loader = DataLoader(validation_dataset, batch_size=args.effective_batch_size, shuffle=False,
                                            **gpuargs)
-        # todo: modify this to test mode
         if exists(args.inference_dataset_root):
             inference_dataset = args.inference_dataset_class(args, **tools.kwargs_from_args(args, 'inference_dataset'))
             block.log('Inference Dataset: {}'.format(args.inference_dataset))
+            block.log('Inference Dataset Size: {}'.format(len(inference_dataset)))
+
             inference_loader = DataLoader(inference_dataset, batch_size=1)
 
-    # Dynamically load model and loss class with parameters passed in via "--model_[param]=[value]" or "--loss_[param]=[value]" arguments
+    # Dynamically load model and loss class with parameters passed in via
+    # "--model_[param]=[value]" or "--loss_[param]=[value]" arguments
     with tools.TimerBlock("Building {} model".format(args.model)) as block:
         class ModelAndLoss(nn.Module):
             def __init__(self, args):
@@ -264,9 +270,10 @@ if __name__ == '__main__':
     for argument, value in sorted(vars(args).items()):
         block.log2file(args.log_file, '{}: {}'.format(argument, value))
 
+
     # Reusable function for training and validataion
-    def train(input_args, train_epoch, start_iteration, files_loader, model, model_optimizer, logger, is_validate=False,
-              offset=0):
+    def train(input_args, train_epoch, start_iteration, files_loader,
+              model, model_optimizer, logger, is_validate=False, offset=0):
         statistics = []
         total_loss = 0
 
@@ -386,63 +393,65 @@ if __name__ == '__main__':
 
 
     # Reusable function for inference
-    # todo: modify to handle videos
-    def inference(args, epoch, data_loader, model, offset=0):
-
+    def inference(input_args, inf_epoch, files_loader, model, offset=0):
         model.eval()
 
-        if args.save_flow or args.render_validation:
-            flow_folder = "{}/inference/{}.epoch-{}-flow-field".format(args.save, args.name.replace('/', '.'), epoch)
+        if input_args.save_flow:
+            flow_folder = "{}/inference/{}.epoch-{}-flow-field".format(input_args.save,
+                                                                       input_args.name.replace('/', '.'), inf_epoch)
             if not os.path.exists(flow_folder):
                 os.makedirs(flow_folder)
 
-        args.inference_n_batches = np.inf if args.inference_n_batches < 0 else args.inference_n_batches
+        input_args.inference_n_batches = np.inf if input_args.inference_n_batches < 0 else input_args.inference_n_batches
 
-        progress = tqdm(data_loader, ncols=100, total=np.minimum(len(data_loader), args.inference_n_batches),
-                        desc='Inferencing ',
-                        leave=True, position=offset)
+        progress = tqdm(files_loader, ncols=100, total=np.minimum(len(files_loader), input_args.inference_n_batches),
+                        desc='Inferencing ', leave=True, position=offset)
 
         statistics = []
         total_loss = 0
-        for batch_idx, (data, target) in enumerate(progress):
-            if args.cuda:
-                data, target = [d.cuda(async=True) for d in data], [t.cuda(async=True) for t in target]
-            data, target = [Variable(d) for d in data], [Variable(t) for t in target]
+        for batch_idx, (data_file) in enumerate(progress):
+            video_dataset = datasets_video.VideoFileDataJIT(input_args, data_file[0])
+            video_loader = DataLoader(video_dataset, batch_size=args.effective_batch_size, shuffle=True, **gpuargs)
 
-            # when ground-truth flows are not available for inference_dataset,
-            # the targets are set to all zeros. thus, losses are actually L1 or L2 norms of compute optical flows,
-            # depending on the type of loss norm passed in
-            with torch.no_grad():
-                losses, output = model(data[0], target[0], inference=True)
+            for i_batch, (data, target) in enumerate(video_loader):
+                if input_args.cuda:
+                    data, target = [d.cuda(async=True) for d in data], [t.cuda(async=True) for t in target]
+                data, target = [Variable(d) for d in data], [Variable(t) for t in target]
 
-            losses = [torch.mean(loss_value) for loss_value in losses]
-            loss_val = losses[0]  # Collect first loss for weight update
-            total_loss += loss_val.data
-            loss_values = [v.data for v in losses]
+                # when ground-truth flows are not available for inference_dataset,
+                # the targets are set to all zeros. thus, losses are actually L1 or L2 norms of compute optical flows,
+                # depending on the type of loss norm passed in
+                with torch.no_grad():
+                    losses, output = model(data[0], target[0], inference=True)
 
-            # gather loss_labels, direct return leads to recursion limit error as it looks for variables to gather'
-            loss_labels = list(model.module.loss.loss_labels)
+                losses = [torch.mean(loss_value) for loss_value in losses]
+                loss_val = losses[0]  # Collect first loss for weight update
+                total_loss += loss_val.data
+                loss_values = [v.data for v in losses]
 
-            statistics.append(loss_values)
-            # import IPython; IPython.embed()
-            if args.save_flow or args.render_validation:
-                for i in range(args.inference_batch_size):
-                    _pflow = output[i].data.cpu().numpy().transpose(1, 2, 0)
+                # gather loss_labels, direct return leads to recursion limit error as it looks for variables to gather'
+                loss_labels = list(model.module.loss.loss_labels)
 
-                    out_path = join(flow_folder, '%06d.flo' % (batch_idx * args.inference_batch_size + i))
-                    flow_utils.write_flow(out_path, _pflow)
+                statistics.append(loss_values)
+                # import IPython; IPython.embed()
+                if input_args.save_flow or input_args.render_validation:
+                    for i in range(input_args.inference_batch_size):
+                        _inference_flow = output[i].data.cpu().numpy().transpose(1, 2, 0)
 
-                    if args.render_validation:
-                        flow_utils.show_flow(out_path, "results")
+                        if input_args.save_flow:
+                            out_path = join(flow_folder, '%06d.flo' % (batch_idx * input_args.inference_batch_size + i))
+                            flow_utils.write_flow(out_path, _inference_flow)
 
-            progress.set_description(
-                'Inference Averages for Epoch {}: '.format(epoch) + tools.format_dictionary_of_losses(loss_labels,
-                                                                                                      np.array(
-                                                                                                          statistics).mean(
-                                                                                                          axis=0)))
-            progress.update(1)
+                        if input_args.render_validation:
+                            flow_utils.display_flow(_inference_flow)
 
-            if batch_idx == (args.inference_n_batches - 1):
+                # todo: implement dynamic loss graph and comment out this stuff
+                progress.set_description('Inference Averages for Epoch {}: '.format(inf_epoch) +
+                                         tools.format_dictionary_of_losses(tools.flatten_list(loss_labels),
+                                                                           np.array(statistics).mean(axis=0)))
+                progress.update(1)
+
+            if batch_idx == (input_args.inference_n_batches - 1):
                 break
 
         progress.close()
@@ -460,7 +469,7 @@ if __name__ == '__main__':
 
     for epoch in progress:
         if args.inference or (args.render_validation and ((epoch - 1) % args.validation_frequency) == 0):
-            stats = inference(args=args, epoch=epoch - 1, data_loader=inference_loader, model=model_and_loss,
+            stats = inference(input_args=args, inf_epoch=epoch - 1, files_loader=inference_loader, model=model_and_loss,
                               offset=offset)
             offset += 1
 

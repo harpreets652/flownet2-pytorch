@@ -107,6 +107,14 @@ def show_flow(flow, win_name='', wait_time=0):
     return
 
 
+def display_flow(flow):
+    flow_img = flow_2_rgb(flow)
+    # flow_img = flow_to_image_hsv(flow)
+    cv2.imshow("Flow", flow_img)
+    cv2.waitKey(0)
+    return
+
+
 def flow_2_rgb(flow, color_wheel=None, unknown_thr=1e6):
     """Convert flow map to RGB image
 
