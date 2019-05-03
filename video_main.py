@@ -413,7 +413,7 @@ if __name__ == '__main__':
             video_dataset = datasets_video.VideoFileDataJIT(input_args, data_file[0])
             video_loader = DataLoader(video_dataset, batch_size=args.effective_batch_size, shuffle=False, **gpuargs)
 
-            error_plot = dyn_plot.DynamicUpdate(title="EPE", x_label="Input Index", y_label="Loss")
+            error_plot = dyn_plot.DynamicUpdate(title="L2", x_label="Input Index", y_label="Loss")
             frame_losses, frame_index = [], []
 
             for i_batch, (data, target) in enumerate(video_loader):
@@ -440,7 +440,7 @@ if __name__ == '__main__':
 
                 # note~ assuming batch size of 1...pytorch doesn't return a loss for each example in batch
                 frame_index.append(i_batch)
-                frame_losses.append(loss_values[1].item())
+                frame_losses.append(loss_values[0].item())
                 error_plot.on_running(frame_index, frame_losses)
 
                 if input_args.save_flow or input_args.render_validation:
@@ -459,6 +459,7 @@ if __name__ == '__main__':
 
                 progress.update(1)
 
+            error_plot.clear()
             if batch_idx == (input_args.inference_n_batches - 1):
                 break
 
