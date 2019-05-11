@@ -28,10 +28,11 @@ class VideoFiles(data.Dataset):
 
 class VideoFileDataJIT(data.Dataset):
     def __init__(self, args, file_path):
-        if args.crop_size[0] < 0 or args.crop_size[1] < 0:
-            args.crop_size = (512, 384)
+        crop_size = tuple(args.crop_size)
+        if crop_size[0] < 0 or crop_size[1] < 0:
+            crop_size = (512, 384)
 
-        self.video_frames = read_video_frames(file_path, args.crop_size)
+        self.video_frames = read_video_frames(file_path, crop_size)
         self.size = self.video_frames.shape[0] - SAMPLING_STRIDE
         return
 
@@ -52,10 +53,11 @@ class VideoFileDataJIT(data.Dataset):
 
 class VideoFileData(data.Dataset):
     def __init__(self, args, file_path):
-        if args.crop_size[0] < 0 or args.crop_size[1] < 0:
-            args.crop_size = (512, 384)
+        crop_size = tuple(args.crop_size)
+        if crop_size[0] < 0 or crop_size[1] < 0:
+            crop_size = (512, 384)
 
-        video_frames = read_video_frames(file_path, args.crop_size)
+        video_frames = read_video_frames(file_path, crop_size)
 
         self.images, self.flows = _generate_flow_frames_stride(video_frames, SAMPLING_STRIDE, "none")
 

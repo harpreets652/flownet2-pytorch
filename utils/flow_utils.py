@@ -121,11 +121,12 @@ def display_results(input_flow, input_images, output_flow):
 
     rgb_frames = np.hstack((image_a, image_b))
 
-    input_flow_image = flow_2_rgb(input_flow) * 255.0
-    output_flow_image = flow_2_rgb(output_flow) * 255.0
-    flow_viz_frames = np.hstack((input_flow_image, output_flow_image)).astype(np.uint8)
+    input_flow_image = flow_2_rgb(input_flow)
+    output_flow_image = flow_2_rgb(output_flow)
+    flow_viz_frames = np.hstack((input_flow_image, output_flow_image))
 
-    cv2.imshow("image a, image b, target flow, output flow", np.vstack((rgb_frames, flow_viz_frames)))
+    cv2.imshow("image a, image b", rgb_frames)
+    cv2.imshow("target flow, generated flow", flow_viz_frames)
     cv2.waitKey(0)
     return
 
