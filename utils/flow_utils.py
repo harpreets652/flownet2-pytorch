@@ -81,7 +81,7 @@ def compute_optical_flow_farneback(frame_a, frame_b, include_magnitude=True):
     :return: optical flow + magnitude
     """
 
-    flow = cv2.calcOpticalFlowFarneback(frame_a, frame_b, None, 0.5, 2, 13, 3, 5, 1.1, 0)
+    flow = cv2.calcOpticalFlowFarneback(frame_a, frame_b, None, 0.5, 3, 9, 6, 7, 1.5, 0)
 
     if include_magnitude:
         mag, _ = cv2.cartToPolar(flow[:, :, 0], flow[:, :, 1])

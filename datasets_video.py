@@ -8,7 +8,7 @@ import cv2
 import utils.flow_utils as fu
 
 # this should be a parameter
-SAMPLING_STRIDE = 2
+SAMPLING_STRIDE = 1
 
 
 class VideoFiles(data.Dataset):
@@ -194,7 +194,7 @@ def pre_process(frame, image_size):
 
     # image shape is [height, width, channel] but resize expects (width, height)
     frame = frame[:576, :, :]
-    # frame = cv2.resize(frame, image_size, interpolation=cv2.INTER_LINEAR)
+    frame = cv2.resize(frame, image_size, interpolation=cv2.INTER_LINEAR)
     # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
     return frame
