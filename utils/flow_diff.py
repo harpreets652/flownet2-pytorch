@@ -38,7 +38,7 @@ def flow_difference_sk_image(flow_a, flow_b):
     flow_img_b = cv2.cvtColor(flow_img_b, cv2.COLOR_RGB2GRAY)
 
     (mean_ssim, diff_image) = sk_image.compare_ssim(flow_img_a, flow_img_b, full=True)
-    diff_image = diff_image * 255
+    diff_image = np.clip(diff_image * 255, 0, 255)
 
     # note~ I can also threshold in order to reduce noise
     # thresh = cv2.threshold(diff_image, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
@@ -60,13 +60,6 @@ def _flow_diff(flow_source, flow_test, patch_size, threshold, difference_func):
     :return: result
     """
 
-    """
-    diff image using selected difference function, absolute difference, squared difference
-    if patch provided, use patch to average error
-    if tolerance provided, apply tolerance; exact values will be near 0.
-    scale difference to be between 0...1
-    """
-
     difference = difference_func(flow_source, flow_test)
 
     if patch_size:
@@ -75,10 +68,16 @@ def _flow_diff(flow_source, flow_test, patch_size, threshold, difference_func):
         difference = np.pad(difference, pad_size, 'constant', constant_values=0)
         difference = cv2.boxFilter(difference, -1, patch_size, normalize=True)
 
+        # remove padding
+        diff_shape = difference.shape
+        crop_rows = (pad_size[0], diff_shape[0] - pad_size[0])
+        crop_cols = (pad_size[1], diff_shape[1] - pad_size[1])
+        difference = difference[crop_rows[0]:crop_rows[1], crop_cols[0]:crop_cols[1], :]
+
+    difference = cv2.normalize(difference, None, 0, 1, norm_type=cv2.NORM_MINMAX)
     if threshold:
-        difference = cv2.threshold(difference, 0, 1, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    else:
-        difference = cv2.normalize(difference, None, 0, 1, norm_type=cv2.NORM_MINMAX)
+        difference = (difference * 255).astype(np.uint8)
+        difference = cv2.threshold(difference, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
 
     return difference
 
