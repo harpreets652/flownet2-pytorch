@@ -59,6 +59,9 @@ def write_flow(filename, uv, v=None):
 
 
 def flow_to_image_hsv(flow):
+    """
+    Flow visualization example from OpenCV Python example
+    """
     mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
 
     hsv = np.zeros((flow.shape[0], flow.shape[1], 3), dtype=np.uint8)
@@ -91,15 +94,16 @@ def compute_optical_flow_farneback(frame_a, frame_b, include_magnitude=True):
     return flow
 
 
-def show_flow(flow, win_name='', wait_time=0):
-    """Show optical flow
+def show_flow(flow_file, win_name='', wait_time=0):
+    """
+    Show optical flow where flow is a file name
 
     Args:
-        flow(str): optical flow to be shown
+        flow_file(str): optical flow to be shown
         win_name(str): the window name
         wait_time(int): value of waitKey param
     """
-    flow = read_flow(flow)
+    flow = read_flow(flow_file)
     flow_img = flow_2_rgb(flow)
     # flow_img = flow_to_image_hsv(flow)
     cv2.imshow(win_name, flow_img)
@@ -108,6 +112,11 @@ def show_flow(flow, win_name='', wait_time=0):
 
 
 def display_flow(flow):
+    """
+    Show optical flow
+    :param flow:  np array
+    """
+
     flow_img = flow_2_rgb(flow)
     # flow_img = flow_to_image_hsv(flow)
     cv2.imshow("Flow", flow_img)
@@ -116,6 +125,13 @@ def display_flow(flow):
 
 
 def display_results(input_flow, input_images, output_flow):
+    """
+    Display inference results
+
+    :param input_flow: target flow
+    :param input_images: input images
+    :param output_flow: network output
+    """
     image_a = input_images[0]
     image_b = input_images[1]
 
@@ -163,8 +179,6 @@ def flow_2_rgb(flow, color_wheel=None, unknown_thr=1e6):
         max_rad = np.max(rad)
         dx /= max_rad
         dy /= max_rad
-
-    [h, w] = dx.shape
 
     rad = np.sqrt(dx ** 2 + dy ** 2)
     angle = np.arctan2(-dy, -dx) / np.pi

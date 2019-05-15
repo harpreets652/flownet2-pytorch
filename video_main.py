@@ -452,7 +452,6 @@ if __name__ == '__main__':
                             flow_utils.write_flow(out_path, _inference_flow)
 
                         if input_args.render_validation:
-                            # todo: render target flow and image frames
                             target_flow = target[0].cpu().numpy()[i].transpose(1, 2, 0)
                             input_frames = data[0].cpu().numpy()[i].transpose(1, 2, 3, 0).astype(np.uint8)
                             flow_utils.display_results(target_flow, input_frames, _inference_flow)
