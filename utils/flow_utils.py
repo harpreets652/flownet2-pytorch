@@ -1,5 +1,6 @@
 import numpy as np
 import cv2
+from utils import flow_diff as fd
 
 TAG_CHAR = np.array([202021.25], np.float32)
 
@@ -134,15 +135,18 @@ def display_results(input_flow, input_images, output_flow):
     """
     image_a = input_images[0]
     image_b = input_images[1]
-
     rgb_frames = np.hstack((image_a, image_b))
 
     input_flow_image = flow_2_rgb(input_flow)
     output_flow_image = flow_2_rgb(output_flow)
     flow_viz_frames = np.hstack((input_flow_image, output_flow_image))
 
+    x_diff, y_diff = fd.flow_difference(input_flow, output_flow, (5, 5), difference_func="squared")
+    flow_diffs = np.hstack((x_diff, y_diff))
+
     cv2.imshow("image a, image b", rgb_frames)
     cv2.imshow("target flow, generated flow", flow_viz_frames)
+    cv2.imshow("x diff, y diff", flow_diffs)
     cv2.waitKey(0)
     return
 
