@@ -12,15 +12,19 @@ SAMPLING_STRIDE = 1
 
 
 class VideoFiles(data.Dataset):
-    def __init__(self, args, root='', file_pattern="*.mov"):
+    def __init__(self, args, root='', file_pattern="*.mov", is_inference=False):
         self.video_files_list = glob.glob(os.path.join(root, file_pattern), recursive=False)
 
         self.video_files_list.sort()
         self.size = len(self.video_files_list)
+        self.random_selection = not is_inference
         return
 
     def __getitem__(self, index):
-        return np.random.choice(self.video_files_list, 1)[0]
+        if self.random_selection:
+            return np.random.choice(self.video_files_list, 1)[0]
+        else:
+            return self.video_files_list[index]
 
     def __len__(self):
         return self.size
