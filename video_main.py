@@ -270,7 +270,6 @@ if __name__ == '__main__':
     for argument, value in sorted(vars(args).items()):
         block.log2file(args.log_file, '{}: {}'.format(argument, value))
 
-
     # Reusable function for training and validataion
     def train(input_args, train_epoch, start_iteration, files_loader,
               model, model_optimizer, logger, is_validate=False, offset=0):
@@ -391,7 +390,6 @@ if __name__ == '__main__':
 
         return total_loss / float(batch_idx + 1), (batch_idx + 1)
 
-
     # Reusable function for inference
     def inference(input_args, inf_epoch, files_loader, model, offset=0):
         model.eval()
@@ -477,8 +475,9 @@ if __name__ == '__main__':
 
     for epoch in progress:
         if args.inference or (args.render_validation and ((epoch - 1) % args.validation_frequency) == 0):
-            stats = inference(input_args=args, inf_epoch=epoch - 1, files_loader=inference_loader, model=model_and_loss,
-                              offset=offset)
+            inference(input_args=args, inf_epoch=epoch - 1,
+                      files_loader=inference_loader,
+                      model=model_and_loss, offset=offset)
             offset += 1
 
         if not args.skip_validation and ((epoch - 1) % args.validation_frequency) == 0:
