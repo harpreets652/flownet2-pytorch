@@ -170,8 +170,8 @@ def flow_2_rgb(flow, color_wheel=None, unknown_thr=1e6):
     assert color_wheel.ndim == 2 and color_wheel.shape[1] == 3
     num_bins = color_wheel.shape[0]
 
-    dx = flow[:, :, 0].copy()
-    dy = flow[:, :, 1].copy()
+    dx = flow[:, :, 1].copy()
+    dy = flow[:, :, 0].copy()
 
     ignore_inds = (np.isnan(dx) | np.isnan(dy) | (np.abs(dx) > unknown_thr) |
                    (np.abs(dy) > unknown_thr))
