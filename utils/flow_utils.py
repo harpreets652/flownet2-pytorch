@@ -171,8 +171,8 @@ def flow_2_rgb(flow, color_wheel=None, unknown_thr=1e6):
     assert color_wheel.ndim == 2 and color_wheel.shape[1] == 3
     num_bins = color_wheel.shape[0]
 
-    dx = flow[:, :, 1].copy()
-    dy = flow[:, :, 0].copy()
+    dx = flow[:, :, 0].copy()
+    dy = flow[:, :, 1].copy()
 
     ignore_inds = (np.isnan(dx) | np.isnan(dy) | (np.abs(dx) > unknown_thr) |
                    (np.abs(dy) > unknown_thr))
@@ -239,6 +239,7 @@ def make_color_wheel(bins=None):
 
     return color_wheel.T
 
+
 def flow_difference(flow_a, flow_b, patch_size, threshold=False, difference_func="absolute"):
     """
     Compute pixel-level difference between source and target
@@ -257,8 +258,8 @@ def flow_difference(flow_a, flow_b, patch_size, threshold=False, difference_func
 
     diff_func = getattr(this_module, difference_func + "_difference")
 
-    diff_y = _flow_diff(flow_a[:, :, 0], flow_b[:, :, 0], patch_size, threshold, diff_func)
-    diff_x = _flow_diff(flow_a[:, :, 1], flow_b[:, :, 1], patch_size, threshold, diff_func)
+    diff_x = _flow_diff(flow_a[:, :, 0], flow_b[:, :, 0], patch_size, threshold, diff_func)
+    diff_y = _flow_diff(flow_a[:, :, 1], flow_b[:, :, 1], patch_size, threshold, diff_func)
 
     return diff_x, diff_y
 
