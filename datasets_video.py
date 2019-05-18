@@ -148,6 +148,7 @@ def generate_flow_frames(image_a, image_b, flow_norm_style):
         flow[:, :, 1] = np.divide(flow[:, :, 1], mag, out=np.zeros_like(flow[:, :, 1]), where=mag != 0)
     else:
         flow = fu.compute_optical_flow_farneback(frame_a_gray, frame_b_gray, False)
+        flow.clip(-flow_norm_clip, flow_norm_clip)
 
     flow = flow.transpose(2, 0, 1)
 
