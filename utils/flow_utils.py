@@ -1,7 +1,6 @@
 import numpy as np
 import cv2
 import sys
-import skimage.measure as sk_image
 
 TAG_CHAR = np.array([202021.25], np.float32)
 
@@ -142,7 +141,7 @@ def display_results(input_flow, input_images, output_flow):
     output_flow_image = flow_2_rgb(output_flow)
     flow_viz_frames = np.hstack((input_flow_image, output_flow_image))
 
-    x_diff, y_diff = flow_difference(input_flow, output_flow, (5, 5), difference_func="squared")
+    x_diff, y_diff = flow_difference(input_flow, output_flow, (5, 5), difference_func="absolute", use_mag_ang=True)
     flow_diffs = np.hstack((x_diff, y_diff))
 
     cv2.imshow("image a, image b", rgb_frames)
@@ -240,62 +239,78 @@ def make_color_wheel(bins=None):
     return color_wheel.T
 
 
-def flow_difference(flow_a, flow_b, patch_size, threshold=False, difference_func="absolute"):
+def acute_angle_diff_filter(angle):
+    return angle if angle <= 180.0 else 360.0 - angle
+
+
+vectorized_diff_filter = np.vectorize(acute_angle_diff_filter)
+
+
+def flow_difference(flow_a, flow_b, patch_size, use_mag_ang=False, threshold=False, difference_func="absolute"):
     """
     Compute pixel-level difference between source and target
 
     :param flow_a: 2D array, target flow
     :param flow_b: 2D array, flow to be evaluated
     :param patch_size: optional, pixel value of flow_b is an average in patch size; odd number size plz
+    :param use_mag_ang: find difference in magnitude/angle rather than raw flow vectors
     :param threshold: optional, if difference should be thresholded
     :param difference_func: absolute|squared
     :return: x_diff, y_diff numpy arrays with range between [0, 1]
     """
 
     this_module = sys.modules[__name__]
+
+    if use_mag_ang and difference_func != "absolute":
+        print("Using mag/angle comparision, defaulting to absolute difference")
+        difference_func = "absolute"
+
     if not hasattr(this_module, difference_func + "_difference"):
         raise RuntimeError(f"Difference function {difference_func}_difference not found")
 
     diff_func = getattr(this_module, difference_func + "_difference")
 
-    diff_x = _flow_diff(flow_a[:, :, 0], flow_b[:, :, 0], patch_size, threshold, diff_func)
-    diff_y = _flow_diff(flow_a[:, :, 1], flow_b[:, :, 1], patch_size, threshold, diff_func)
+    if use_mag_ang:
+        # magnitude and angle(degrees)
+        flow_source = np.dstack(cv2.cartToPolar(flow_a[:, :, 0], flow_a[:, :, 1], angleInDegrees=True))
+        flow_target = np.dstack(cv2.cartToPolar(flow_b[:, :, 0], flow_b[:, :, 1], angleInDegrees=True))
 
-    return diff_x, diff_y
+        # magnitude difference
+        diff_chan_0 = diff_func(flow_source[:, :, 0], flow_target[:, :, 0])
+
+        # angle difference
+        angle_diffs = diff_func(flow_source[:, :, 1], flow_target[:, :, 1])
+
+        # find acute angle between differences
+        diff_chan_1 = vectorized_diff_filter(angle_diffs)
+
+        # max magnitude difference is (25, 25) = 35.35
+        # max angle max difference is 180.0
+        # note: opposite angles will have 0 mag difference but max angle difference
+        chan_0_norm = 35.36
+        chan_1_norm = 180.0
+    else:
+        diff_chan_0 = diff_func(flow_a[:, :, 0], flow_b[:, :, 0])
+        diff_chan_1 = diff_func(flow_a[:, :, 1], flow_b[:, :, 1])
+
+        # max absolute difference will be 50
+        chan_0_norm, chan_1_norm = 50.0, 50.0
+
+    diff_chan_0 = _flow_diff(diff_chan_0, patch_size, threshold, chan_0_norm)
+    diff_chan_1 = _flow_diff(diff_chan_1, patch_size, threshold, chan_1_norm)
+
+    return diff_chan_0, diff_chan_1
 
 
-def flow_difference_sk_image(flow_a, flow_b):
-    flow_img_a = flow_2_rgb(flow_a)
-    flow_img_b = flow_2_rgb(flow_b)
-
-    # note~ have to convert image to gray
-    flow_img_a = cv2.cvtColor(flow_img_a, cv2.COLOR_RGB2GRAY)
-    flow_img_b = cv2.cvtColor(flow_img_b, cv2.COLOR_RGB2GRAY)
-
-    (mean_ssim, diff_image) = sk_image.compare_ssim(flow_img_a, flow_img_b, full=True)
-    diff_image = np.clip(diff_image * 255, 0, 255)
-
-    # note~ I can also threshold in order to reduce noise
-    # thresh = cv2.threshold(diff_image, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
-
-    print(f"DEBUG: mean ssim: {mean_ssim}")
-
-    return diff_image
-
-
-def _flow_diff(flow_source, flow_test, patch_size, threshold, difference_func):
+def _flow_diff(difference, patch_size, threshold, normalization_value):
     """
     difference between source and test
-    :param flow_source: 1D array, source flow of a single axis
-    :param flow_test: 1D array, flow to evaluate
     :param patch_size:
     :param patch_size: optional, pixel value of flow_b is an average in patch size; odd number size plz
     :param threshold: optional, if thresholding should be applied
-    :param difference_func: function object
+    :param normalization_value: used to normalize the difference after smoothing
     :return: result
     """
-
-    difference = difference_func(flow_source, flow_test)
 
     if patch_size:
         # for custom kernel: cv2.filter2D
@@ -309,9 +324,9 @@ def _flow_diff(flow_source, flow_test, patch_size, threshold, difference_func):
         crop_cols = (pad_size[1], diff_shape[1] - pad_size[1])
         difference = difference[crop_rows[0]:crop_rows[1], crop_cols[0]:crop_cols[1]]
 
-    difference = cv2.normalize(difference, None, 0, 1, norm_type=cv2.NORM_MINMAX)
+    difference /= normalization_value
+
     if threshold:
-        # fixme: if global error is low, this will find relative peaks; how to think about threshold as percent tolerance?
         difference = (difference * 255).astype(np.uint8)
         difference = cv2.threshold(difference, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
 
