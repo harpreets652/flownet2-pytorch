@@ -141,7 +141,7 @@ def display_results(input_flow, input_images, output_flow):
     output_flow_image = flow_2_rgb(output_flow)
     flow_viz_frames = np.hstack((input_flow_image, output_flow_image))
 
-    x_diff, y_diff = flow_difference(input_flow, output_flow, (5, 5), difference_func="absolute", use_mag_ang=True)
+    x_diff, y_diff = flow_difference(input_flow, output_flow, (5, 5), difference_func="absolute", use_mag_ang=False)
     flow_diffs = np.hstack((x_diff, y_diff))
 
     cv2.imshow("image a, image b", rgb_frames)
