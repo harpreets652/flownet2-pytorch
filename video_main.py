@@ -14,6 +14,7 @@ from tensorboardX import SummaryWriter
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import datetime
 
 import datasets_video
 import losses
@@ -71,6 +72,12 @@ if __name__ == '__main__':
     parser.add_argument('--fp16', action='store_true', help='Run model in pseudo-fp16 mode (fp16 storage fp32 math).')
     parser.add_argument('--fp16_scale', type=float, default=1024.,
                         help='Loss scaling, positive power of 2 values can improve fp16 convergence.')
+
+    # parameters for ROC curve generation
+    parser.add_argument('--generate_roc', action='store_true')
+    parser.add_argument('--anomaly_labels_path', type=str, help="txt file listing anomalous frames for test videos")
+    parser.add_argument("--anomaly_patch_size", default=[2, 2], type=int, nargs=2, help="anomaly patch size")
+    parser.add_argument("--pad_model_output", action='store_true')
 
     tools.add_arguments_for_module(parser, models, argument_for_class='model', default='FlowNet2')
 
@@ -134,11 +141,12 @@ if __name__ == '__main__':
         # dict to collect activation gradients (for training debug purpose)
         args.grads = {}
 
-        if args.inference:
+        if args.inference or args.generate_roc:
             args.skip_validation = True
             args.skip_training = True
             args.total_epochs = 1
             args.inference_dir = "{}/inference".format(args.save)
+            args.roc_dir = "{}/roc".format(args.save)
 
     print('Source Code')
     print(('  Current Git Hash: {}\n'.format(args.current_hash)))
@@ -270,6 +278,7 @@ if __name__ == '__main__':
     for argument, value in sorted(vars(args).items()):
         block.log2file(args.log_file, '{}: {}'.format(argument, value))
 
+
     # Reusable function for training and validataion
     def train(input_args, train_epoch, start_iteration, files_loader,
               model, model_optimizer, logger, is_validate=False, offset=0):
@@ -390,6 +399,7 @@ if __name__ == '__main__':
 
         return total_loss / float(batch_idx + 1), (batch_idx + 1)
 
+
     # Reusable function for inference
     def inference(input_args, inf_epoch, files_loader, model, offset=0):
         model.eval()
@@ -465,6 +475,102 @@ if __name__ == '__main__':
         return
 
 
+    def compute_roc(input_args, files_loader, model):
+        threshold_range = np.concatenate((np.arange(0.02, 0.1, step=0.02),
+                                          np.arange(0.1, 1.0, step=0.1)))
+        roc_results = []
+        print("Starting ROC test")
+        for i, threshold in enumerate(threshold_range):
+            confusion_mat = evaluate_model(input_args, model, files_loader, threshold)
+
+            total_anomalous_frames = np.sum(confusion_mat[0])
+            total_normal_frames = np.sum(confusion_mat[1])
+
+            true_pos_rate = confusion_mat[0][0] / total_anomalous_frames if total_anomalous_frames > 0 else 0
+            false_pos_rate = confusion_mat[1][0] / total_normal_frames
+
+            roc_results.append((threshold, true_pos_rate, false_pos_rate))
+
+            print(f"[{datetime.datetime.now()}] Confusion Matrix @ threshold: {threshold} \n {confusion_mat}")
+
+        print(f"[{datetime.datetime.now()}] ROC test finished.")
+        tools.save_text_data(input_args.roc_dir, roc_results, "roc.csv", "Threshold,TP,FP", "%0.3f")
+        print(f"Results saved at {input_args.roc_dir}")
+
+        roc_np = np.array(roc_results)
+        if input_args.anomaly_labels_path:
+            tools.visualize_roc_curve(roc_np[:, 2], roc_np[:, 1], "False Positive Rate", "True Positive Rate", "ROC")
+        else:
+            tools.visualize_roc_curve(roc_np[:, 0], roc_np[:, 2],
+                                      "Threshold", "False Positive Rate", "Normal Data Curve")
+
+        return
+
+
+    def evaluate_model(input_args, trained_model, files_loader, threshold, offset=0):
+        trained_model.eval()
+
+        videos_progress = tqdm(files_loader, ncols=100, total=len(files_loader),
+                               desc='Inferencing ', leave=True, position=offset)
+
+        anomalous_frames_dict = {}
+        if input_args.anomaly_labels_path:
+            anomalous_frames_dict = tools.parse_anomalous_frame_labels(input_args.anomaly_labels_path)
+
+        aggregated_confusion_mat = np.zeros((2, 2))
+        for video_idx, (data_file) in enumerate(videos_progress):
+            video_dataset = datasets_video.VideoFileDataJIT(input_args, data_file[0])
+            video_loader = DataLoader(video_dataset, batch_size=args.effective_batch_size, shuffle=False, **gpuargs)
+
+            base_name = os.path.basename(data_file[0])
+            anomalous_frames = anomalous_frames_dict[base_name] if base_name in anomalous_frames_dict else []
+
+            local_confusion_mat = np.zeros((2, 2))
+            for i_batch, (data, target) in enumerate(video_loader):
+                if input_args.cuda:
+                    data, target = [d.cuda(async=True) for d in data], [t.cuda(async=True) for t in target]
+                data, target = [Variable(d) for d in data], [Variable(t) for t in target]
+
+                # when ground-truth flows are not available for inference_dataset,
+                # the targets are set to all zeros. thus, losses are actually L1 or L2 norms of compute optical flows,
+                # depending on the type of loss norm passed in
+                with torch.no_grad():
+                    _, output = trained_model(data[0], target[0], inference=True)
+
+                for i in range(input_args.inference_batch_size):
+                    _inference_flow = output[i].data.cpu().numpy().transpose(1, 2, 0)
+                    _ground_truth_flow = target[0].cpu().numpy()[i].transpose(1, 2, 0)
+
+                    predicted_label, actual_label = get_labels(input_args, _inference_flow, _ground_truth_flow,
+                                                               i_batch + i + 1, anomalous_frames, threshold)
+
+                    local_confusion_mat[actual_label][predicted_label] += 1
+
+                videos_progress.update(1)
+
+            aggregated_confusion_mat = np.add(aggregated_confusion_mat, local_confusion_mat)
+
+        videos_progress.close()
+
+        return aggregated_confusion_mat
+
+
+    def get_labels(arguments, model_output, ground_truth, frame_number, anomaly_frames_label_list, anomaly_threshold):
+        # (x-a)/(b-a)*(beta-alpha) + alpha ; alpha=0, beta=1, a=min(x), b=max(x)
+        x_diff, y_diff = flow_utils.flow_difference(ground_truth, model_output, (5, 5), difference_func="absolute")
+
+        is_x_anomalous = flow_utils.is_anomalous(arguments, x_diff, anomaly_threshold)
+        is_y_anomalous = flow_utils.is_anomalous(arguments, y_diff, anomaly_threshold)
+        predicted_label = is_x_anomalous and is_y_anomalous
+
+        # assume normal frame unless specified in anomalous frames list
+        actual_label = flow_utils.LABEL_NORMAL
+        if frame_number in anomaly_frames_label_list:
+            actual_label = flow_utils.LABEL_ANOMALOUS
+
+        return predicted_label, actual_label
+
+
     # Primary epoch loop
     best_err = 1e8
     progress = tqdm(list(range(args.start_epoch, args.total_epochs + 1)), miniters=1, ncols=100,
@@ -474,7 +580,12 @@ if __name__ == '__main__':
     global_iteration = 0
 
     for epoch in progress:
-        if args.inference or (args.render_validation and ((epoch - 1) % args.validation_frequency) == 0):
+
+        if args.generate_roc:
+            compute_roc(args, inference_loader, model_and_loss)
+
+        if (args.inference or (args.render_validation and ((epoch - 1) % args.validation_frequency) == 0)) \
+                and not args.generate_roc:
             inference(input_args=args, inf_epoch=epoch - 1,
                       files_loader=inference_loader,
                       model=model_and_loss, offset=offset)

@@ -9,6 +9,7 @@ from pytz import timezone
 from datetime import datetime
 import inspect
 import torch
+import matplotlib.pyplot as plt
 
 
 def datestr():
@@ -167,3 +168,43 @@ def save_checkpoint(state, is_best, path, prefix, filename='checkpoint.pth.tar')
     torch.save(state, name)
     if is_best:
         shutil.copyfile(name, prefix_save + '_model_best.pth.tar')
+
+
+def parse_anomalous_frame_labels(anomalous_files_path):
+    anomalous_dict = {}
+
+    with open(anomalous_files_path, 'r') as anomalous_file:
+        lines = anomalous_file.readlines()
+        for line in lines:
+            name, frames_str = line.split("=")
+            frames = [int(i) for i in frames_str.split(",")]
+            anomalous_dict[name] = frames
+
+    return anomalous_dict
+
+
+def save_text_data(output_dir, data, output_name, csv_header, data_format):
+    results_dir = os.path.join(output_dir, "results")
+    if not os.path.exists(results_dir):
+        os.makedirs(results_dir)
+
+    out_path = os.path.join(results_dir, output_name)
+
+    np.savetxt(out_path,
+               data,
+               delimiter=",",
+               header=csv_header,
+               fmt=data_format)
+    return
+
+
+def visualize_roc_curve(x, y, x_axis_label, y_axis_label, plot_title):
+    plt.scatter(x, y, c='r', marker='^')
+    plt.plot(x, y, c='r')
+
+    plt.xlabel(x_axis_label)
+    plt.ylabel(y_axis_label)
+    plt.title(plot_title)
+    plt.show()
+
+    return

@@ -3,6 +3,8 @@ import cv2
 import sys
 
 TAG_CHAR = np.array([202021.25], np.float32)
+LABEL_ANOMALOUS = 0
+LABEL_NORMAL = 1
 
 
 def read_flow(fn):
@@ -353,3 +355,36 @@ def absolute_difference(a, b):
     :return: result
     """
     return np.abs(np.subtract(a, b))
+
+
+def is_anomalous(arguments, anomaly_input, anomaly_threshold):
+    """
+    Is flow difference anomalous?
+
+    :param arguments: anomaly_patch_size, pad_disc_output
+    :param anomaly_input: np array
+    :param anomaly_threshold: float value
+    :return:
+    """
+    patch_size_row = arguments.anomaly_patch_size[0]
+    patch_size_col = arguments.anomaly_patch_size[1]
+
+    if arguments.pad_model_output:
+        anomaly_input = np.pad(anomaly_input, pad_width=((0, 0), (1, 1)), mode='constant', constant_values=(0, 0))
+
+    row_idx = 0
+    for i in range(anomaly_input.shape[0] // patch_size_row):
+        col_idx = 0
+        for j in range(anomaly_input.shape[1] // patch_size_col):
+            z = anomaly_input[row_idx:row_idx + patch_size_row, col_idx:col_idx + patch_size_col]
+            avg_diff = np.average(z)
+
+            if avg_diff > anomaly_threshold:
+                return LABEL_ANOMALOUS
+
+            col_idx += patch_size_col
+
+        row_idx += patch_size_row
+
+    return LABEL_NORMAL
+
