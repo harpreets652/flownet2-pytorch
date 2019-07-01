@@ -275,8 +275,9 @@ if __name__ == '__main__':
             block.log("{} = {} ({})".format(param, default, type(default)))
 
     # Log all arguments to file
-    for argument, value in sorted(vars(args).items()):
-        block.log2file(args.log_file, '{}: {}'.format(argument, value))
+    if not args.generate_roc:
+        for argument, value in sorted(vars(args).items()):
+            block.log2file(args.log_file, '{}: {}'.format(argument, value))
 
 
     # Reusable function for training and validataion
@@ -477,9 +478,11 @@ if __name__ == '__main__':
 
     def compute_roc(input_args, files_loader, model):
         threshold_range = np.arange(0.02, 1.0, step=0.02)
+        setattr(input_args, "anomaly_thresholds", threshold_range.tolist())
 
+        added_frame_counts = False
         roc_results = []
-        print("Starting ROC test")
+        print(f"[{datetime.datetime.now()}] Starting ROC test")
 
         confusion_mats = evaluate_model(input_args, model, files_loader, threshold_range)
 
@@ -488,6 +491,11 @@ if __name__ == '__main__':
 
             total_anomalous_frames = np.sum(confusion_mat[0])
             total_normal_frames = np.sum(confusion_mat[1])
+
+            if not added_frame_counts:
+                added_frame_counts = True
+                setattr(input_args, "number_anomalous_frames", int(total_anomalous_frames))
+                setattr(input_args, "number_normal_frames", int(total_normal_frames))
 
             true_pos_rate = confusion_mat[0][0] / total_anomalous_frames if total_anomalous_frames > 0 else 0
             false_pos_rate = confusion_mat[1][0] / total_normal_frames
@@ -499,6 +507,9 @@ if __name__ == '__main__':
         print(f"[{datetime.datetime.now()}] ROC test finished.")
         tools.save_text_data(input_args.roc_dir, roc_results, "roc.csv", "Threshold,TP,FP", "%0.3f")
         print(f"Results saved at {input_args.roc_dir}")
+
+        for argument, value in sorted(vars(input_args).items()):
+            block.log2file(args.log_file, '{}: {}'.format(argument, value))
 
         roc_np = np.array(roc_results)
         if input_args.anomaly_labels_path:
