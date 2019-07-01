@@ -357,13 +357,13 @@ def absolute_difference(a, b):
     return np.abs(np.subtract(a, b))
 
 
-def is_anomalous(arguments, anomaly_input, anomaly_threshold):
+def is_anomalous(arguments, anomaly_input, anomaly_thresholds):
     """
     Is flow difference anomalous?
 
     :param arguments: anomaly_patch_size, pad_disc_output
     :param anomaly_input: np array
-    :param anomaly_threshold: float value
+    :param anomaly_thresholds: float value
     :return:
     """
     patch_size_row = arguments.anomaly_patch_size[0]
@@ -372,6 +372,7 @@ def is_anomalous(arguments, anomaly_input, anomaly_threshold):
     if arguments.pad_model_output:
         anomaly_input = np.pad(anomaly_input, pad_width=((0, 0), (1, 1)), mode='constant', constant_values=(0, 0))
 
+    labels = np.full((len(anomaly_thresholds)), fill_value=LABEL_NORMAL, dtype=int)
     row_idx = 0
     for i in range(anomaly_input.shape[0] // patch_size_row):
         col_idx = 0
@@ -379,12 +380,18 @@ def is_anomalous(arguments, anomaly_input, anomaly_threshold):
             z = anomaly_input[row_idx:row_idx + patch_size_row, col_idx:col_idx + patch_size_col]
             avg_diff = np.average(z)
 
-            if avg_diff > anomaly_threshold:
-                return LABEL_ANOMALOUS
+            for k in range(len(anomaly_thresholds)):
+                threshold = anomaly_thresholds[k]
+                if avg_diff > threshold:
+                    labels[k] = LABEL_ANOMALOUS
+
+            # if all are anomalous, short-circuit loop
+            if not np.any(labels):
+                return labels
 
             col_idx += patch_size_col
 
         row_idx += patch_size_row
 
-    return LABEL_NORMAL
+    return labels
 

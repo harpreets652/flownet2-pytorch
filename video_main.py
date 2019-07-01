@@ -476,12 +476,15 @@ if __name__ == '__main__':
 
 
     def compute_roc(input_args, files_loader, model):
-        threshold_range = np.concatenate((np.arange(0.02, 0.1, step=0.02),
-                                          np.arange(0.1, 1.0, step=0.1)))
+        threshold_range = np.arange(0.02, 1.0, step=0.02)
+
         roc_results = []
         print("Starting ROC test")
+
+        confusion_mats = evaluate_model(input_args, model, files_loader, threshold_range)
+
         for i, threshold in enumerate(threshold_range):
-            confusion_mat = evaluate_model(input_args, model, files_loader, threshold)
+            confusion_mat = confusion_mats[i]
 
             total_anomalous_frames = np.sum(confusion_mat[0])
             total_normal_frames = np.sum(confusion_mat[1])
@@ -507,7 +510,7 @@ if __name__ == '__main__':
         return
 
 
-    def evaluate_model(input_args, trained_model, files_loader, threshold, offset=0):
+    def evaluate_model(input_args, trained_model, files_loader, thresholds, offset=0):
         trained_model.eval()
 
         videos_progress = tqdm(files_loader, ncols=100, total=len(files_loader),
@@ -517,7 +520,7 @@ if __name__ == '__main__':
         if input_args.anomaly_labels_path:
             anomalous_frames_dict = tools.parse_anomalous_frame_labels(input_args.anomaly_labels_path)
 
-        aggregated_confusion_mat = np.zeros((2, 2))
+        aggregated_confusion_mat = np.zeros((len(thresholds), 2, 2), dtype=np.int)
         for video_idx, (data_file) in enumerate(videos_progress):
             video_dataset = datasets_video.VideoFileDataJIT(input_args, data_file[0])
             video_loader = DataLoader(video_dataset, batch_size=args.effective_batch_size, shuffle=False, **gpuargs)
@@ -525,7 +528,7 @@ if __name__ == '__main__':
             base_name = os.path.basename(data_file[0])
             anomalous_frames = anomalous_frames_dict[base_name] if base_name in anomalous_frames_dict else []
 
-            local_confusion_mat = np.zeros((2, 2))
+            local_confusion_mat = np.zeros((len(thresholds), 2, 2), dtype=np.int)
             for i_batch, (data, target) in enumerate(video_loader):
                 if input_args.cuda:
                     data, target = [d.cuda(async=True) for d in data], [t.cuda(async=True) for t in target]
@@ -541,10 +544,11 @@ if __name__ == '__main__':
                     _inference_flow = output[i].data.cpu().numpy().transpose(1, 2, 0)
                     _ground_truth_flow = target[0].cpu().numpy()[i].transpose(1, 2, 0)
 
-                    predicted_label, actual_label = get_labels(input_args, _inference_flow, _ground_truth_flow,
-                                                               i_batch + i + 1, anomalous_frames, threshold)
+                    predicted_labels, actual_label = get_labels(input_args, _inference_flow, _ground_truth_flow,
+                                                                i_batch + i + 1, anomalous_frames, thresholds)
 
-                    local_confusion_mat[actual_label][predicted_label] += 1
+                    for k in range(len(predicted_labels)):
+                        local_confusion_mat[k][actual_label][predicted_labels[k]] += 1
 
                 videos_progress.update(1)
 
@@ -555,20 +559,23 @@ if __name__ == '__main__':
         return aggregated_confusion_mat
 
 
-    def get_labels(arguments, model_output, ground_truth, frame_number, anomaly_frames_label_list, anomaly_threshold):
+    def get_labels(arguments, model_output, ground_truth, frame_number, anomaly_frames_label_list, anomaly_thresholds):
         # (x-a)/(b-a)*(beta-alpha) + alpha ; alpha=0, beta=1, a=min(x), b=max(x)
         x_diff, y_diff = flow_utils.flow_difference(ground_truth, model_output, (5, 5), difference_func="absolute")
 
-        is_x_anomalous = flow_utils.is_anomalous(arguments, x_diff, anomaly_threshold)
-        is_y_anomalous = flow_utils.is_anomalous(arguments, y_diff, anomaly_threshold)
-        predicted_label = is_x_anomalous and is_y_anomalous
+        predicted_x_labels = flow_utils.is_anomalous(arguments, x_diff, anomaly_thresholds)
+        predicted_y_labels = flow_utils.is_anomalous(arguments, y_diff, anomaly_thresholds)
+
+        predicted_labels = []
+        for i in range(predicted_x_labels.shape[0]):
+            predicted_labels.append(predicted_x_labels[i] and predicted_y_labels[i])
 
         # assume normal frame unless specified in anomalous frames list
         actual_label = flow_utils.LABEL_NORMAL
         if frame_number in anomaly_frames_label_list:
             actual_label = flow_utils.LABEL_ANOMALOUS
 
-        return predicted_label, actual_label
+        return predicted_labels, actual_label
 
 
     # Primary epoch loop
