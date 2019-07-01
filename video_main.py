@@ -77,7 +77,7 @@ if __name__ == '__main__':
     parser.add_argument('--generate_roc', action='store_true')
     parser.add_argument('--anomaly_labels_path', type=str, help="txt file listing anomalous frames for test videos")
     parser.add_argument("--anomaly_patch_size", default=[2, 2], type=int, nargs=2, help="anomaly patch size")
-    parser.add_argument("--pad_model_output", action='store_true')
+    parser.add_argument("--pad_output", action='store_true')
 
     tools.add_arguments_for_module(parser, models, argument_for_class='model', default='FlowNet2')
 
@@ -245,7 +245,7 @@ if __name__ == '__main__':
         if args.resume and os.path.isfile(args.resume):
             block.log("Loading checkpoint '{}'".format(args.resume))
             checkpoint = torch.load(args.resume)
-            if not args.inference:
+            if not args.inference and not args.generate_roc:
                 args.start_epoch = checkpoint['epoch']
             best_err = checkpoint['best_EPE']
             model_and_loss.module.model.load_state_dict(checkpoint['state_dict'])
@@ -551,12 +551,13 @@ if __name__ == '__main__':
                 with torch.no_grad():
                     _, output = trained_model(data[0], target[0], inference=True)
 
-                for i in range(input_args.inference_batch_size):
+                for i in range(input_args.effective_batch_size):
                     _inference_flow = output[i].data.cpu().numpy().transpose(1, 2, 0)
                     _ground_truth_flow = target[0].cpu().numpy()[i].transpose(1, 2, 0)
 
+                    frame_number = i_batch * input_args.effective_batch_size + i + 1
                     predicted_labels, actual_label = get_labels(input_args, _inference_flow, _ground_truth_flow,
-                                                                i_batch + i + 1, anomalous_frames, thresholds)
+                                                                frame_number, anomalous_frames, thresholds)
 
                     for k in range(len(predicted_labels)):
                         local_confusion_mat[k][actual_label][predicted_labels[k]] += 1

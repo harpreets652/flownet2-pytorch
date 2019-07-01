@@ -369,7 +369,7 @@ def is_anomalous(arguments, anomaly_input, anomaly_thresholds):
     patch_size_row = arguments.anomaly_patch_size[0]
     patch_size_col = arguments.anomaly_patch_size[1]
 
-    if arguments.pad_model_output:
+    if arguments.pad_output:
         anomaly_input = np.pad(anomaly_input, pad_width=((0, 0), (1, 1)), mode='constant', constant_values=(0, 0))
 
     labels = np.full((len(anomaly_thresholds)), fill_value=LABEL_NORMAL, dtype=int)
