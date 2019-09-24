@@ -205,6 +205,6 @@ def visualize_roc_curve(x, y, x_axis_label, y_axis_label, plot_title):
     plt.xlabel(x_axis_label)
     plt.ylabel(y_axis_label)
     plt.title(plot_title)
-    plt.show()
+    plt.show(block=True)
 
     return

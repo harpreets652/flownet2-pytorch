@@ -569,7 +569,7 @@ if __name__ == '__main__':
                     for k in range(len(predicted_labels)):
                         local_confusion_mat[k][actual_label][predicted_labels[k]] += 1
 
-                videos_progress.update(1)
+            videos_progress.update(1)
 
             aggregated_confusion_mat = np.add(aggregated_confusion_mat, local_confusion_mat)
 
