@@ -15,6 +15,7 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import datetime
+import cv2
 
 import datasets_video
 import losses
@@ -77,6 +78,7 @@ if __name__ == '__main__':
     parser.add_argument('--generate_roc', action='store_true')
     parser.add_argument('--anomaly_labels_path', type=str, help="txt file listing anomalous frames for test videos")
     parser.add_argument("--anomaly_patch_size", default=[2, 2], type=int, nargs=2, help="anomaly patch size")
+    parser.add_argument("--diff_win_map", required=False, default=None, help="png window map image")
     parser.add_argument("--pad_output", action='store_true')
 
     tools.add_arguments_for_module(parser, models, argument_for_class='model', default='FlowNet2')
@@ -477,7 +479,7 @@ if __name__ == '__main__':
 
 
     def compute_roc(input_args, files_loader, model):
-        threshold_range = np.arange(0.02, 1.0, step=0.02)
+        threshold_range = np.arange(0.002, 1.0, step=0.002)
         setattr(input_args, "anomaly_thresholds", threshold_range.tolist())
 
         added_frame_counts = False
@@ -531,6 +533,10 @@ if __name__ == '__main__':
         if input_args.anomaly_labels_path:
             anomalous_frames_dict = tools.parse_anomalous_frame_labels(input_args.anomaly_labels_path)
 
+        win_difference_map = None
+        if input_args.diff_win_map:
+            win_difference_map = cv2.imread(input_args.diff_win_map, cv2.IMREAD_GRAYSCALE)
+
         aggregated_confusion_mat = np.zeros((len(thresholds), 2, 2), dtype=np.int)
         for video_idx, (data_file) in enumerate(videos_progress):
             video_dataset = datasets_video.VideoFileDataJIT(input_args, data_file[0])
@@ -557,7 +563,8 @@ if __name__ == '__main__':
 
                     frame_number = i_batch * input_args.effective_batch_size + i + 1
                     predicted_labels, actual_label = get_labels(input_args, _inference_flow, _ground_truth_flow,
-                                                                frame_number, anomalous_frames, thresholds)
+                                                                frame_number, anomalous_frames, thresholds,
+                                                                win_difference_map)
 
                     for k in range(len(predicted_labels)):
                         local_confusion_mat[k][actual_label][predicted_labels[k]] += 1
@@ -571,9 +578,14 @@ if __name__ == '__main__':
         return aggregated_confusion_mat
 
 
-    def get_labels(arguments, model_output, ground_truth, frame_number, anomaly_frames_label_list, anomaly_thresholds):
+    def get_labels(arguments, model_output, ground_truth, frame_number,
+                   anomaly_frames_label_list, anomaly_thresholds, win_diff_map=None):
         # (x-a)/(b-a)*(beta-alpha) + alpha ; alpha=0, beta=1, a=min(x), b=max(x)
-        x_diff, y_diff = flow_utils.flow_difference(ground_truth, model_output, (5, 5), difference_func="absolute")
+        if win_diff_map is not None:
+            x_diff, y_diff = flow_utils.flow_difference(ground_truth, model_output, difference_func="absolute",
+                                                        difference_filter_map=win_diff_map)
+        else:
+            x_diff, y_diff = flow_utils.flow_difference(ground_truth, model_output, (5, 5), difference_func="absolute")
 
         predicted_x_labels = flow_utils.is_anomalous(arguments, x_diff, anomaly_thresholds)
         predicted_y_labels = flow_utils.is_anomalous(arguments, y_diff, anomaly_thresholds)

@@ -248,7 +248,8 @@ def acute_angle_diff_filter(angle):
 vectorized_diff_filter = np.vectorize(acute_angle_diff_filter)
 
 
-def flow_difference(flow_a, flow_b, patch_size, use_mag_ang=False, threshold=False, difference_func="absolute"):
+def flow_difference(flow_a, flow_b, patch_size=None, use_mag_ang=False, threshold=False,
+                    difference_func="absolute", difference_filter_map=None):
     """
     Compute pixel-level difference between source and target
 
@@ -258,6 +259,7 @@ def flow_difference(flow_a, flow_b, patch_size, use_mag_ang=False, threshold=Fal
     :param use_mag_ang: find difference in magnitude/angle rather than raw flow vectors
     :param threshold: optional, if difference should be thresholded
     :param difference_func: absolute|squared
+    :param difference_filter_map: 2D array, value of each element defines nxn difference window size, odd numbers
     :return: x_diff, y_diff numpy arrays with range between [0, 1]
     """
 
@@ -298,8 +300,15 @@ def flow_difference(flow_a, flow_b, patch_size, use_mag_ang=False, threshold=Fal
         # max absolute difference will be 50
         chan_0_norm, chan_1_norm = 50.0, 50.0
 
-    diff_chan_0 = _flow_diff(diff_chan_0, patch_size, threshold, chan_0_norm)
-    diff_chan_1 = _flow_diff(diff_chan_1, patch_size, threshold, chan_1_norm)
+    if difference_filter_map is not None:
+        diff_chan_0 = average_filter_by_map(diff_chan_0, difference_filter_map, True)
+        diff_chan_1 = average_filter_by_map(diff_chan_1, difference_filter_map, True)
+
+        diff_chan_0 /= chan_0_norm
+        diff_chan_1 /= chan_1_norm
+    else:
+        diff_chan_0 = _flow_diff(diff_chan_0, patch_size, threshold, chan_0_norm)
+        diff_chan_1 = _flow_diff(diff_chan_1, patch_size, threshold, chan_1_norm)
 
     return diff_chan_0, diff_chan_1
 
@@ -333,6 +342,46 @@ def _flow_diff(difference, patch_size, threshold, normalization_value):
         difference = cv2.threshold(difference, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
 
     return difference
+
+
+def average_filter_by_map(input_source, filter_map, normalize):
+    """
+    :param input_source: 2D array
+    :param filter_map: 2D array with same dimensions/size as input source; odd numbered filters
+    :param normalize: if values at each window should be normalized
+    :return: resulting array
+    """
+    results = np.zeros_like(input_source)
+
+    # pad input source using the largest value in mask
+    max_filter_size_centered = np.max(filter_map) // 2
+    pad_size = (max_filter_size_centered, max_filter_size_centered)
+    input_source = np.pad(input_source, pad_size, 'edge')
+
+    # compute difference average
+    for r_idx in range(filter_map.shape[0]):
+        for c_idx in range(filter_map.shape[1]):
+            win_size = filter_map[r_idx, c_idx]
+
+            x_idx = r_idx + max_filter_size_centered
+            y_idx = c_idx + max_filter_size_centered
+            if win_size > 1:
+                win_centered = win_size // 2
+
+                # offset for padding from max filter size
+                x_start, x_end = x_idx - win_centered, x_idx + win_centered + 1
+                y_start, y_end = y_idx - win_centered, y_idx + win_centered + 1
+                window = input_source[x_start:x_end, y_start:y_end]
+
+                win_sum = np.sum(window)
+                if normalize:
+                    win_sum /= win_size * win_size
+            else:
+                win_sum = input_source[x_idx, y_idx]
+
+            results[r_idx, c_idx] = win_sum
+
+    return results
 
 
 def squared_difference(a, b):
@@ -394,4 +443,3 @@ def is_anomalous(arguments, anomaly_input, anomaly_thresholds):
         row_idx += patch_size_row
 
     return labels
-
