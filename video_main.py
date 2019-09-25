@@ -16,6 +16,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 import datetime
 import cv2
+from sklearn.metrics import auc
 
 import datasets_video
 import losses
@@ -483,11 +484,13 @@ if __name__ == '__main__':
         setattr(input_args, "anomaly_thresholds", threshold_range.tolist())
 
         added_frame_counts = False
-        roc_results = []
-        print(f"[{datetime.datetime.now()}] Starting ROC test")
 
+        print(f"[{datetime.datetime.now()}] Starting ROC test")
         confusion_mats = evaluate_model(input_args, model, files_loader, threshold_range)
 
+        roc_results = []
+        tp_list = []
+        fp_list = []
         for i, threshold in enumerate(threshold_range):
             confusion_mat = confusion_mats[i]
 
@@ -503,6 +506,8 @@ if __name__ == '__main__':
             false_pos_rate = confusion_mat[1][0] / total_normal_frames
 
             roc_results.append((threshold, true_pos_rate, false_pos_rate))
+            tp_list.append(true_pos_rate)
+            fp_list.append(false_pos_rate)
 
             print(f"[{datetime.datetime.now()}] Confusion Matrix @ threshold: {threshold} \n {confusion_mat}")
 
@@ -512,6 +517,11 @@ if __name__ == '__main__':
 
         for argument, value in sorted(vars(input_args).items()):
             block.log2file(args.log_file, '{}: {}'.format(argument, value))
+
+        # compute and save AUC
+        auc_score = auc(np.array(fp_list), np.array(tp_list))
+        tools.save_text_data(input_args.roc_dir, [auc_score], "auc.csv", "auc-score", "%0.6f")
+        print(f"auc score: {auc_score}")
 
         roc_np = np.array(roc_results)
         if input_args.anomaly_labels_path:
